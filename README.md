@@ -1,7 +1,3 @@
----
-typora-root-url: ../TBMS
----
-
 # TBMS
 time based model serving, still a proof of concept
 
@@ -29,13 +25,13 @@ Put the whole framework in a picture is like this, let's discuss each component 
 
 ![worlfow](/ref/worlfow.png)
 
-### time broker
+### Time broker
 
-Why time matters? See morden chatbot from DeepPavlov here. The whole service is provided by a workflow with a lot of components. Some components are slow some are fast. Every time you upgrade to a more sophisticated solution you need a backup.
+Why time matters? See modern chatbot from DeepPavlov here. The whole service is provided by a workflow with a lot of components. Some components are slow some are fast. Every time you upgrade to a more sophisticated solution you need a backup.
 
 ![chatbot](/ref/chatbot.png)
 
-So we redesign the client request to include the backups and time limits. See example in **client_api.py** (not executable code, just poc), each model requests list the backups and the estimated time. If timeout, backup models will be executed asynchronously. If all the execution time together pass over the 'tloc' limit, at least some thing will return.
+So we redesign the client request to include the backups and time limits. See example in **client_api.py** (*pseudocode only for poc*), each model requests list the backups and the estimated time. If timeout, backup models will be executed asynchronously. If all the execution time together pass over the 'tloc' limit, at least some thing will return.
 
 ```python
 tbms_models = tbmsList({"embedding":{"est":35},
@@ -47,23 +43,23 @@ tbms_models = tbmsList({"embedding":{"est":35},
 answer = tbmsTry(tbmsClient,tbms_models,questionString,tloc=50,crossRequest=1,crossLag=10,priority=0)
 ```
 
-And for the server side, we send the first model request to the service mesh, and then add the backups to a timer. The timer is designed as a fork tree in our poc example **timeBroker.go**. The timer can also use an ordinary queue but need to handle the insert and ranking nicely. Then we use goroutine to concurrently send the timed request, and use channel and locker to handle parallelzation.
+And for the server side, we send the first model request to the service mesh, and then add the backups to a timer. The timer is designed as a fork tree in our example **timeBroker.go** (*pseudocode only for poc*). The timer can also use an ordinary queue but need to handle the insert and ranking nicely. Then we use goroutines to concurrently send the timed request, and use channel and locker to handle parallelization.
 
-### service mesh
+### Service mesh
 
-Every request need to pass to a server to execute, but those micro services maybe changing, so we use existing service mesh to handle the request from the timeBroker. As we discuss above, VMs and kubernetes have to be considered, so [kuma](https://github.com/Kong/kuma) from Kong is recommended.
+Every request need to pass to a server to execute, but those micro services maybe changing, so we use existing service mesh to handle the request from the timeBroker. As we discuss above, VMs and kubernetes have to be considered, so [kuma](https://github.com/Kong/kuma) from Kong is recommended. Load balance, monitoring, service discover, identity and access management are all done here. But GPUs load balance are different, we have to balance between batch, lag and require more GPUs.
 
-### batch optimization
+#### Batch optimization
 
-batch the same request together will speed up the process, but it has dilemma pictured below. The user has to make the choice in configure file.
+GPUs can batch the same request together, use multi core parallelization like SIMD to speed up the process. But it has dilemma pictured below. The full batch has the best QPS, but waiting for the batch to be filled in less traffic will increase the lag. The user has to make the choice in configure file.
 
 ![batch_opi](/ref/batch_opi.png)
 
 ### GPU visualization
 
-You can use a single GPU to handle multi models and multi requests. But the context switch will cost thousands times more then CPU. And the GPU level optimization has to rely on the GPU producer like Nvidia. Luckly Nvidia opensourced its [TensorRT](https://github.com/NVIDIA/tensorrt-inference-server) which has streaming. It can load the next context will process the previous one.
+Finally the load will be executed on a CPU, GPU or FPGA. GPU and TPU are the best choice for today's AI cloud serving. You can use a single GPU to handle multi models and multi requests. But the context switch will cost thousands times more then CPU. And the GPU level optimization has to rely on the GPU producer like Nvidia. Luckly Nvidia opensourced its [TensorRT](https://github.com/NVIDIA/tensorrt-inference-server) which has streaming. It can load the next context while processing the previous one. But in a multi GPU cloud, the TensorRT has to collaborate with service mesh to get the best batch performance.
 
-### model management
+### Model management
 
 Ensemble model means we can recursively add an ensembled client model to the model repository. See model repository in tensorRT inference server.
 
