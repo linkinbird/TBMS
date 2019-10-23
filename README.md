@@ -65,7 +65,7 @@ You can use a single GPU to handle multi models and multi requests. But the cont
 
 ### model management
 
-Ensemble model means we can recursively add an ensembled client model to the model repository.See model repository in tensorRT inference server.
+Ensemble model means we can recursively add an ensembled client model to the model repository. See model repository in tensorRT inference server.
 
 ![TensorRT](/ref/TensorRT.png)
 
