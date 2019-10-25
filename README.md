@@ -55,7 +55,7 @@ GPUs can batch the same request together, use multi core parallelization like SI
 
 ![batch_opi](/ref/batch_opi.png)
 
-### GPU visualization
+### GPU virtualization
 
 Finally the load will be executed on a CPU, GPU or FPGA. GPU and TPU are the best choice for today's AI cloud serving. You can use a single GPU to handle multi models and multi requests. But the context switch will cost thousands times more then CPU. And the GPU level optimization has to rely on the GPU producer like Nvidia. Luckly Nvidia opensourced its [TensorRT](https://github.com/NVIDIA/tensorrt-inference-server) which has streaming. It can load the next context while processing the previous one. But in a multi GPU cloud, the TensorRT has to collaborate with service mesh to get the best batch performance.
 
