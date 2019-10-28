@@ -6,20 +6,23 @@ import {
 	"net"
 	"time"
 	"os"
+	"sync"
 }
 
 // main class
 type TimeBroker struct {
 	treeOfQueue timeTree
 	messQueue map[int]*timeTree
-	next *timeTree	//lock flag
-	nexts chan *timeTree	//concurrent channel
+	nextCache map[*timeTree]bool	//cache as locks
+	nextChan chan *timeTree			//concurrent channel
+	mu sync.Mutex
 }
 
-func (t *TimeBroker) Init(nexts chan) {
+func (t *TimeBroker) Init() {
 	t.treeOfQueue = make(timeTree)
-	t.next = &t.treeOfQueue
-	t.nexts = nexts
+	t.messQueue = make(map[int]*timeTree)
+	t.nextCache = make(map[*timeTree]bool)
+	t.nextChan = make(chan *timeTree, 10)
 }
 
 func (t *TimeBroker) Listen(proto string, address string) {
@@ -58,10 +61,12 @@ func (t *TimeBroker) append(conn net.Listener) {
 func (t *TimeBroker) nextUpdate(checkLeft bool) {
 	if checkLeft {
 		tmp := t.treeOfQueue.Leftest()
-		if tmp != t.next {
-			t.next = tmp	//mutex loc
-			t.nexts <- tmp
+		t.mu.Lock()	//mutex loc
+		if !t.nextCache[tmp] {
+			t.nextCache[tmp] = true
+			t.nextChan <- tmp
 		}
+		t.mu.Unlock()
 	}
 }
 
@@ -70,22 +75,24 @@ func (t *TimeBroker) Request() {
 	var next *timeTree
 	for {
 		// Looping in Parallel with channel
-		if len(t.nexts)>0 {
-			next <- t.nexts
+		if len(t.nextChan)>0 {
+			next <- t.nextChan
 			go t.requestNext(next, maxDelay)
 		}
 	}
 }
 
 func (t *TimeBroker) requestNext(next *timeTree, maxDelay time.second) {
-	for time.Now() < next.NodeTime(){
-		delay := min(maxDelay, (next.NodeTime() - time.Now()) / 10)
+	nodeTime := next.NodeTime()
+	for time.Now() < nodeTime{
+		delay := min(maxDelay, (nodeTime - time.Now()) / 10)
 		time.Sleep(delay)
 	}
 
 	model, receiver, checkLeft := t.treeOfQueue.PopUpdate(next)
 	go t.requestOne(next, model, receiver)
-	t.nextUpdate(true)	//alse check after poped
+	delete(t.nextCache, next)	//concurrency-safe to delete
+	t.nextUpdate(true)	//also check after poped
 }
 
 func (t *TimeBroker) requestOne(node *timeTree, model *model, receiver net.Endpoint) {
@@ -131,9 +138,12 @@ func getUDID () int{
 }
 
 // sub class is a balanced fork tree
+// Almost concurrent-safe
+// example in Java https://github.com/npgall/concurrent-trees
 type timeTree struct {
 	value timeRequest
 	left, right *timeTree
+	muL, muR sync.Mutex	//locks of leafs
 }
 
 func (tree *timeTree) Insert(new timeRequest, balance bool, checkLeft bool) *timeTree, bool{
@@ -142,42 +152,65 @@ func (tree *timeTree) Insert(new timeRequest, balance bool, checkLeft bool) *tim
 		tree.value = new
 		return tree, true
 	}
-	// better mutex
+
+	// Mutex lock early will lock whole tree and all inserts
+	// Separate lock logic in every branch and check flag after lock
+	rightFlag := tree.right
+
 	// fork tree insert
 	if tree.NodeTime() > new.NextTime() {
+		tree.muL.Lock()
 		if tree.left != nil {
-			tree.left.Insert(new, false)
+			tree.muL.Unlock()	//Unlock early in recursion
+			_, checkLeft = tree.left.Insert(new, false, checkLeft)
 		} else {
 			newTree = make(timeTree)
 			newTree.value = new
 			newTree.left = nil
 			newTree.right = nil
 			tree.left = *newTree
+			tree.muL.Unlock()
 		}
-	} else if tree.right.NodeTime() > new.NextTime() {
-		newTree = make(timeTree)
-		newTree.value = new
-		newTree.left = nil
-		newTree.right = tree.right
-		tree.right = *newTree
+	} else if tree.right != nil & tree.right.NodeTime() > new.NextTime() {
+		tree.muR.Lock()	//right leaf may change during lock time
 		checkLeft = false	// if search turn right, means leftest node not altered
+		if tree.right == rightFlag {
+			newTree = make(timeTree)
+			newTree.value = new
+			newTree.left = nil
+			newTree.right = tree.right
+			tree.right = *newTree
+			tree.muR.Unlock()
+		} else {
+			tree.muR.Unlock()
+			tree.right.Insert(new,false,checkLeft)
+		}
 	} else {
+		tree.muR.Lock()
 		checkLeft = false
 		if tree.right != nil {
-			tree.right.Insert(new, false)
+			tree.muR.Unlock()	//Unlock early in recursion
+			tree.right.Insert(new, false, checkLeft)
 		} else {
 			newTree = make(timeTree)
 			newTree.value = new
 			newTree.left = nil
 			newTree.right = nil
 			tree.right = *newTree
+			tree.muR.Unlock()
 		}
+		// Only balance on the root or will broken the branch
 		// change root to the right one
 		if balance {
-			Leftest(tree.right).left = tree
-			oldTree := tree
-			tree = oldTree.right
-			oldTree.right = nil
+			tree.muR.Lock()
+			oldRoot := tree
+			leaf := Leftest(oldRoot.right)
+			leaf.muL.Lock()	//may be late
+			leaf.left = oldRoot
+			leaf.muL.Unlock()
+			tree = oldRoot.right	//OK to accept new traffic
+			oldRoot.right = nil
+			tree.muR.Unlock()
 		}
 	}
 	return tree, checkLeft
@@ -276,7 +309,7 @@ type RemoteModel struct {
 
 func main() {
 	timeBroker := make(TimeBroker)	//make init for sub class too
-	timeBroker.Init(make(chan *timeTree, 10))	//buffered channel
+	timeBroker.Init()
 	addresses := map[string]string {
 		"tcp","localhost:8000"
 		"tcp","bcrb.com"

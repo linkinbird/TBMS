@@ -43,7 +43,7 @@ tbms_models = tbmsList({"embedding":{"est":35},
 answer = tbmsTry(tbmsClient,tbms_models,questionString,tloc=50,crossRequest=1,crossLag=10,priority=0)
 ```
 
-And for the server side, we send the first model request to the service mesh, and then add the backups to a timer. The timer is designed as a fork tree in our example **timeBroker.go** (*pseudocode only for poc*). The timer can also use an ordinary queue but need to handle the insert and ranking nicely. Then we use goroutines to concurrently send the timed request, and use channel and locker to handle parallelization.
+And for the server side, we send the first model request to the service mesh, and then add the backups to a timer. The timer is designed as an concurrent-safe fork tree in our example **timeBroker.go** (*pseudocode only for poc*). The timer can also use an ordinary queue but need to handle the concurrent insert and ranking nicely. This design allows us to use goroutines to concurrently send the timed request, with channel and locker to handle parallelization.
 
 ### Service mesh
 
@@ -67,6 +67,6 @@ Ensemble model means we can recursively add an ensembled client model to the mod
 
 ## Vision and mission
 
-We want AI power be free to everyone.
+We want AI power free to everyone.
 
 We help every business no matter small or big to get the benefit of AI.
