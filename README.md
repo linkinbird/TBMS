@@ -13,7 +13,7 @@ In the ecosystem, from bottom up are processing chips, execution lib, design too
 
 The easy choice is to use the cloud services, which are easy to train and easy to publish. Traditional company without an AI team will go this way. They get the benefit of the advanced AI with very little cost, but lost the freedom. Most tech company will choose to use open source AI tools. But those tools are changing fast and the advanced AI team are expensive. So the solution we pursue is a model as a service platform. The IT team can handle this platform as easy as any other service, while the model team can use the opensource module like [bert](https://github.com/google-research/bert) in NLP to deliver a fast solution with much lower research cost. See [bert-as-service](https://github.com/hanxiao/bert-as-service) as an example.
 
-### Visual machine or K8s
+### Virtual machine or K8s
 
 Google has down a lot of work in this field. By combining the tensorflow and kubernetes they get [kuberflow](https://github.com/kubeflow/kubeflow) which is an elastic AI model serving tool with the benefit of both sides. Yes we know electric cars are good but there're still a lot of petrol engines running on the road. So as ordinary business companies we want the freedom to handle all the possibilities and welcome the competition of the service provider, so both VM and K8s are considered.
 
